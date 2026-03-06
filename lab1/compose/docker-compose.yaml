@@ -1,0 +1,25 @@
+services:
+  api-demo:
+    image: bush22/bivt-23-sp-2-vfi
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/default"
+      SPRING_DATASOURCE_USERNAME: "postgres"
+      SPRING_DATASOURCE_PASSWORD: "postgres"
+    ports:
+      - "8080:8080"
+    restart: always
+    depends_on: 
+       - postgres
+
+  postgres:
+    image: postgres:13.3
+    environment:
+      POSTGRES_DB: "default"
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+    ports:
+      - "8001:5432"
+    volumes:
+      - .:/var/lib/postgresql/data
+    restart: always
