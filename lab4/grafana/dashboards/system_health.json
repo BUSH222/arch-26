@@ -1,0 +1,27 @@
+{
+  "title": "System Health",
+  "panels": [
+    {
+      "title": "Prometheus Scrape Health",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "up",
+          "legendFormat": "{{job}} - {{instance}}"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "title": "Active Alerts",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "ALERTS",
+          "format": "table"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 }
+    }
+  ]
+}

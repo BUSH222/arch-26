@@ -1,0 +1,27 @@
+{
+  "title": "Application Metrics",
+  "panels": [
+    {
+      "title": "Total HTTP Requests",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(http_requests_total) by (endpoint, method)",
+          "legendFormat": "{{method}} {{endpoint}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "title": "Request Latency (95th percentile)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, endpoint, method))",
+          "legendFormat": "P95 {{method}} {{endpoint}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    }
+  ]
+}
