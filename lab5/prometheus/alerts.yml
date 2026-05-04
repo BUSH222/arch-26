@@ -1,0 +1,38 @@
+groups:
+  - name: AppAlerts
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Instance {{ $labels.instance }} down"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute."
+
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1.0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency on {{ $labels.instance }}"
+          description: "95th percentile request latency is above 1s for the last 5 minutes."
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis at {{ $labels.instance }} is using more than 90% of its max memory."
+
+      - alert: TestAlert
+        expr: increase(http_requests_total{endpoint="/testalert"}[1m]) > 0
+        for: 10s
+        labels:
+          severity: info
+        annotations:
+          summary: "Test Alert Triggered"
+          description: "A GET request was made to the /testalert endpoint on {{ $labels.instance }}."
