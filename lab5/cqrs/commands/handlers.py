@@ -5,125 +5,85 @@ import redis
 
 from cqrs.commands.models import CreateUserCommand, UpdateUserCommand, DeleteUserCommand
 from cqrs.commands.repository import WriteUserRepository
-from cqrs.events import UserCreatedEvent, UserUpdatedEvent, UserDeletedEvent
+from cqrs.events import UserCreatedEvent, UserUpdatedEvent, UserDeletedEvent, StoredEvent
+from cqrs.event_store.repository import EventStoreRepository
 from cqrs.dtos import CreateUserCommandResponseDTO, CommandResponseDTO
 
 
 class EventPublisher:
-    """Publishes events to RabbitMQ"""
+    """Publishes events to RabbitMQ for external subscribers"""
     
     @staticmethod
-    def publish_user_created_event(event: UserCreatedEvent):
-        """Publish UserCreatedEvent"""
+    def publish_stored_event(stored_event: StoredEvent):
+        """Publish a stored event to RabbitMQ"""
         try:
             from rabbitmq_client import get_rabbitmq_connection, EXCHANGE_NAME
             connection = get_rabbitmq_connection()
             channel = connection.channel()
             
+            # Publish event data (what external subscribers care about)
             channel.basic_publish(
                 exchange=EXCHANGE_NAME,
                 routing_key='',
-                body=json.dumps(event)
+                body=json.dumps(stored_event["event_data"])
             )
             connection.close()
         except Exception as e:
-            print(f"Failed to publish UserCreatedEvent: {e}")
-    
-    @staticmethod
-    def publish_user_updated_event(event: UserUpdatedEvent):
-        """Publish UserUpdatedEvent"""
-        try:
-            from rabbitmq_client import get_rabbitmq_connection, EXCHANGE_NAME
-            connection = get_rabbitmq_connection()
-            channel = connection.channel()
-            
-            channel.basic_publish(
-                exchange=EXCHANGE_NAME,
-                routing_key='',
-                body=json.dumps(event)
-            )
-            connection.close()
-        except Exception as e:
-            print(f"Failed to publish UserUpdatedEvent: {e}")
-    
-    @staticmethod
-    def publish_user_deleted_event(event: UserDeletedEvent):
-        """Publish UserDeletedEvent"""
-        try:
-            from rabbitmq_client import get_rabbitmq_connection, EXCHANGE_NAME
-            connection = get_rabbitmq_connection()
-            channel = connection.channel()
-            
-            channel.basic_publish(
-                exchange=EXCHANGE_NAME,
-                routing_key='',
-                body=json.dumps(event)
-            )
-            connection.close()
-        except Exception as e:
-            print(f"Failed to publish UserDeletedEvent: {e}")
-
-
-class CacheInvalidator:
-    """Invalidates cache entries in Redis"""
-    
-    def __init__(self, redis_client: redis.Redis):
-        self.redis = redis_client
-    
-    @staticmethod
-    def cache_key(user_id: int) -> str:
-        return f"user:{user_id}"
-    
-    def invalidate_user_cache(self, user_id: int):
-        """Remove a user from cache"""
-        key = self.cache_key(user_id)
-        self.redis.delete(key)
-    
-    def invalidate_all_users_cache(self):
-        """Invalidate the all-users cache"""
-        # Pattern-based invalidation for all users list
-        self.redis.delete("users:all")
+            print(f"Failed to publish event to RabbitMQ: {e}")
 
 
 class CreateUserCommandHandler:
-    """Handler for CreateUserCommand"""
+    """
+    Handler for CreateUserCommand.
+    
+    Flow:
+    1. Generate event: UserCreatedEvent
+    2. Append to Event Store (SYNC) - this is the source of truth
+    3. Publish to RabbitMQ (ASYNC) - for external subscribers
+    4. Return response
+    
+    Note: Cache invalidation and projections are handled by EventSubscriber
+    """
     
     def __init__(
         self,
         repository: WriteUserRepository,
-        redis_client: redis.Redis
+        event_store_repo: EventStoreRepository
     ):
         self.repository = repository
-        self.cache_invalidator = CacheInvalidator(redis_client)
+        self.event_store = event_store_repo
         self.event_publisher = EventPublisher()
     
     def handle(self, command: CreateUserCommand) -> CreateUserCommandResponseDTO:
-        """
-        Execute the CreateUserCommand:
-        1. Write to database
-        2. Publish event
-        3. Invalidate cache
-        """
+        """Execute the CreateUserCommand"""
         try:
-            # Write to database
+            # Step 1: Create user in database to get the assigned ID
             created_user = self.repository.create_user(command.name, command.email)
+            user_id = created_user["id"]
             
-            # Publish event
-            event: UserCreatedEvent = {
-                "id": created_user["id"],
-                "name": created_user["name"],
-                "email": created_user["email"],
+            # Step 2: Generate domain event
+            event_data: UserCreatedEvent = {
+                "aggregate_id": user_id,
+                "name": command.name,
+                "email": command.email,
                 "created_at": datetime.utcnow().isoformat()
             }
-            self.event_publisher.publish_user_created_event(event)
             
-            # Invalidate all-users cache
-            self.cache_invalidator.invalidate_all_users_cache()
+            # Step 3: Append to Event Store (immutable, atomic)
+            stored_event = self.event_store.append_event(
+                event_type="UserCreatedEvent",
+                aggregate_id=user_id,
+                event_data=event_data,
+                command_id=command.command_id
+            )
+            
+            # Step 4: Publish to RabbitMQ (async, for subscribers like notification service)
+            self.event_publisher.publish_stored_event(stored_event)
             
             return CreateUserCommandResponseDTO(
                 command_id=command.command_id,
                 status="success",
-                user_id=created_user["id"]
+                user_id=user_id
             )
         
         except Exception as e:
@@ -135,25 +95,31 @@ class CreateUserCommandHandler:
 
 
 class UpdateUserCommandHandler:
-    """Handler for UpdateUserCommand"""
+    """
+    Handler for UpdateUserCommand.
+    
+    Flow:
+    1. Generate event: UserUpdatedEvent
+    2. Append to Event Store (SYNC)
+    3. Publish to RabbitMQ (ASYNC)
+    4. Return response
+    
+    Note: Cache invalidation and projections are handled by EventSubscriber
+    """
     
     def __init__(
         self,
         repository: WriteUserRepository,
-        redis_client: redis.Redis
+        event_store_repo: EventStoreRepository
     ):
         self.repository = repository
-        self.cache_invalidator = CacheInvalidator(redis_client)
+        self.event_store = event_store_repo
         self.event_publisher = EventPublisher()
     
     def handle(self, command: UpdateUserCommand) -> CommandResponseDTO:
-        """
-        Execute the UpdateUserCommand:
-        1. Update in database
-        2. Publish event
-        3. Invalidate cache
-        """
+        """Execute the UpdateUserCommand"""
         try:
+            # Step 1: Update in database
             updated_user = self.repository.update_user(
                 command.user_id,
                 command.name,
@@ -167,18 +133,24 @@ class UpdateUserCommandHandler:
                     message="User not found"
                 )
             
-            # Publish event
-            event: UserUpdatedEvent = {
-                "id": updated_user["id"],
-                "name": updated_user["name"],
-                "email": updated_user["email"],
+            # Step 2: Generate domain event
+            event_data: UserUpdatedEvent = {
+                "aggregate_id": command.user_id,
+                "name": command.name,
+                "email": command.email,
                 "updated_at": datetime.utcnow().isoformat()
             }
-            self.event_publisher.publish_user_updated_event(event)
             
-            # Invalidate cache
-            self.cache_invalidator.invalidate_user_cache(command.user_id)
-            self.cache_invalidator.invalidate_all_users_cache()
+            # Step 3: Append to Event Store
+            stored_event = self.event_store.append_event(
+                event_type="UserUpdatedEvent",
+                aggregate_id=command.user_id,
+                event_data=event_data,
+                command_id=command.command_id
+            )
+            
+            # Step 4: Publish to RabbitMQ
+            self.event_publisher.publish_stored_event(stored_event)
             
             return CommandResponseDTO(
                 command_id=command.command_id,
@@ -194,25 +166,31 @@ class UpdateUserCommandHandler:
 
 
 class DeleteUserCommandHandler:
-    """Handler for DeleteUserCommand"""
+    """
+    Handler for DeleteUserCommand.
+    
+    Flow:
+    1. Generate event: UserDeletedEvent
+    2. Append to Event Store (SYNC)
+    3. Publish to RabbitMQ (ASYNC)
+    4. Return response
+    
+    Note: Cache invalidation and projections are handled by EventSubscriber
+    """
     
     def __init__(
         self,
         repository: WriteUserRepository,
-        redis_client: redis.Redis
+        event_store_repo: EventStoreRepository
     ):
         self.repository = repository
-        self.cache_invalidator = CacheInvalidator(redis_client)
+        self.event_store = event_store_repo
         self.event_publisher = EventPublisher()
     
     def handle(self, command: DeleteUserCommand) -> CommandResponseDTO:
-        """
-        Execute the DeleteUserCommand:
-        1. Delete from database
-        2. Publish event
-        3. Invalidate cache
-        """
+        """Execute the DeleteUserCommand"""
         try:
+            # Step 1: Delete from database
             success = self.repository.delete_user(command.user_id)
             
             if not success:
@@ -222,16 +200,22 @@ class DeleteUserCommandHandler:
                     message="User not found"
                 )
             
-            # Publish event
-            event: UserDeletedEvent = {
-                "id": command.user_id,
+            # Step 2: Generate domain event
+            event_data: UserDeletedEvent = {
+                "aggregate_id": command.user_id,
                 "deleted_at": datetime.utcnow().isoformat()
             }
-            self.event_publisher.publish_user_deleted_event(event)
             
-            # Invalidate cache
-            self.cache_invalidator.invalidate_user_cache(command.user_id)
-            self.cache_invalidator.invalidate_all_users_cache()
+            # Step 3: Append to Event Store
+            stored_event = self.event_store.append_event(
+                event_type="UserDeletedEvent",
+                aggregate_id=command.user_id,
+                event_data=event_data,
+                command_id=command.command_id
+            )
+            
+            # Step 4: Publish to RabbitMQ
+            self.event_publisher.publish_stored_event(stored_event)
             
             return CommandResponseDTO(
                 command_id=command.command_id,

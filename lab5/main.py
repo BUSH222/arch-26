@@ -15,14 +15,15 @@ from cqrs.commands.handlers import (
 from cqrs.commands.repository import WriteUserRepository
 from cqrs.queries.handlers import GetUserQueryHandler, GetAllUsersQueryHandler
 from cqrs.queries.repository import ReadUserRepository
+from cqrs.event_store.repository import EventStoreRepository
 
 time.sleep(2)
 
 setup_rabbitmq()
 
 app = FastAPI(
-    title="Cache-Aside Demo API with CQRS",
-    description="Demonstrates CQRS pattern with separate command and query sides"
+    title="Cache-Aside Demo API with CQRS + Event Sourcing",
+    description="Demonstrates CQRS pattern with Event Sourcing - separate command and query sides with event store"
 )
 
 # Prometheus Metrics
@@ -63,16 +64,38 @@ db = psycopg2.connect(
 )
 
 
+def init_event_store_schema():
+    """Initialize event store tables if they don't exist"""
+    try:
+        with open('init_event_store.sql', 'r') as f:
+            schema_sql = f.read()
+        
+        with db.cursor() as cur:
+            cur.execute(schema_sql)
+            db.commit()
+        print("✓ Event store schema initialized")
+    except FileNotFoundError:
+        print("⚠ init_event_store.sql not found, skipping schema initialization")
+    except Exception as e:
+        print(f"⚠ Error initializing event store schema: {e}")
+
+
+# ============== Initialize Event Store ==============
+
+init_event_store_schema()
+
+
 # ============== CQRS Handler Initialization ==============
 
 def init_command_handlers():
-    """Initialize all command handlers"""
+    """Initialize all command handlers with event sourcing"""
     write_repo = WriteUserRepository(db)
+    event_store_repo = EventStoreRepository(db)
     
     return {
-        "create_user": CreateUserCommandHandler(write_repo, redis_client),
-        "update_user": UpdateUserCommandHandler(write_repo, redis_client),
-        "delete_user": DeleteUserCommandHandler(write_repo, redis_client),
+        "create_user": CreateUserCommandHandler(write_repo, event_store_repo),
+        "update_user": UpdateUserCommandHandler(write_repo, event_store_repo),
+        "delete_user": DeleteUserCommandHandler(write_repo, event_store_repo),
     }
 
 
@@ -123,5 +146,147 @@ def init_db():
 
     except Exception as e:
         db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== Event Store Inspection Endpoints ==============
+
+@app.get("/event-store")
+def get_all_events():
+    """Retrieve all events from the event store"""
+    try:
+        event_store = EventStoreRepository(db)
+        events = event_store.get_all_events()
+        
+        return {
+            "total_events": len(events),
+            "events": [
+                {
+                    "event_id": e["event_id"],
+                    "event_type": e["event_type"],
+                    "aggregate_id": e["aggregate_id"],
+                    "aggregate_type": e["aggregate_type"],
+                    "event_data": e["event_data"],
+                    "metadata": e["metadata"],
+                    "created_at": e["created_at"],
+                    "version": e["version"]
+                }
+                for e in events
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/event-store/aggregate/{aggregate_id}")
+def get_aggregate_events(aggregate_id: int):
+    """Retrieve all events for a specific aggregate (user)"""
+    try:
+        event_store = EventStoreRepository(db)
+        events = event_store.get_aggregate_events(aggregate_id)
+        
+        if not events:
+            return {
+                "aggregate_id": aggregate_id,
+                "total_events": 0,
+                "events": []
+            }
+        
+        return {
+            "aggregate_id": aggregate_id,
+            "total_events": len(events),
+            "events": [
+                {
+                    "event_id": e["event_id"],
+                    "event_type": e["event_type"],
+                    "aggregate_id": e["aggregate_id"],
+                    "event_data": e["event_data"],
+                    "metadata": e["metadata"],
+                    "created_at": e["created_at"],
+                    "version": e["version"]
+                }
+                for e in events
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/event-store/type/{event_type}")
+def get_events_by_type(event_type: str):
+    """Retrieve all events of a specific type"""
+    try:
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                SELECT event_id, event_type, aggregate_id, aggregate_type,
+                       event_data, metadata, created_at, version
+                FROM event_store
+                WHERE event_type = %s
+                ORDER BY event_id ASC
+                """,
+                (event_type,)
+            )
+            rows = cur.fetchall()
+        
+        events = []
+        for row in rows:
+            import json
+            events.append({
+                "event_id": row[0],
+                "event_type": row[1],
+                "aggregate_id": row[2],
+                "aggregate_type": row[3],
+                "event_data": json.loads(row[4]) if isinstance(row[4], str) else row[4],
+                "metadata": json.loads(row[5]) if isinstance(row[5], str) else row[5],
+                "created_at": row[6].isoformat() if row[6] else "",
+                "version": row[7]
+            })
+        
+        return {
+            "event_type": event_type,
+            "total_events": len(events),
+            "events": events
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/event-store/stats")
+def get_event_store_stats():
+    """Get event store statistics"""
+    try:
+        with db.cursor() as cur:
+            # Total events
+            cur.execute("SELECT COUNT(*) FROM event_store")
+            total_events = cur.fetchone()[0]
+            
+            # Events by type
+            cur.execute(
+                "SELECT event_type, COUNT(*) as count FROM event_store GROUP BY event_type"
+            )
+            events_by_type = {row[0]: row[1] for row in cur.fetchall()}
+            
+            # Total aggregates
+            cur.execute("SELECT COUNT(DISTINCT aggregate_id) FROM event_store WHERE aggregate_id IS NOT NULL")
+            total_aggregates = cur.fetchone()[0]
+            
+            # Latest event
+            cur.execute(
+                "SELECT event_id, event_type, created_at FROM event_store ORDER BY event_id DESC LIMIT 1"
+            )
+            latest = cur.fetchone()
+        
+        return {
+            "total_events": total_events,
+            "total_aggregates": total_aggregates,
+            "events_by_type": events_by_type,
+            "latest_event": {
+                "event_id": latest[0],
+                "event_type": latest[1],
+                "created_at": latest[2].isoformat() if latest[2] else ""
+            } if latest else None
+        }
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
