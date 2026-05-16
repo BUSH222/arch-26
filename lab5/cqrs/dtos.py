@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel  # noqa: F401 #type:ignore
 from typing import Optional
 
 

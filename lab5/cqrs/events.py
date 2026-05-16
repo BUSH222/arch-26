@@ -1,5 +1,4 @@
 from typing import TypedDict, Optional
-from datetime import datetime
 
 
 # ============== DOMAIN EVENTS (business events) ==============

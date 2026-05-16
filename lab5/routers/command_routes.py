@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Request, HTTPException
-import redis
-import psycopg2
+from fastapi import APIRouter, Request, HTTPException  # noqa: F401 #type:ignore
+import redis  # noqa: F401 #type:ignore
+import psycopg2  # noqa: F401 #type:ignore
 
 from cqrs.dtos import (
     CreateUserRequestDTO,
@@ -13,12 +13,12 @@ from cqrs.commands.models import (
     UpdateUserCommand,
     DeleteUserCommand
 )
-from cqrs.commands.handlers import (
-    CreateUserCommandHandler,
-    UpdateUserCommandHandler,
-    DeleteUserCommandHandler
-)
-from cqrs.commands.repository import WriteUserRepository
+# from cqrs.commands.handlers import (
+#     CreateUserCommandHandler,
+#     UpdateUserCommandHandler,
+#     DeleteUserCommandHandler
+# )
+# from cqrs.commands.repository import WriteUserRepository
 
 
 router = APIRouter(prefix="/commands", tags=["Commands"])
@@ -39,15 +39,6 @@ def create_user_command(
     request: CreateUserRequestDTO,
     http_request: Request
 ) -> CreateUserCommandResponseDTO:
-    """
-    Create a new user via command.
-    
-    **Command Flow:**
-    1. Write user to PostgreSQL
-    2. Publish UserCreatedEvent to RabbitMQ
-    3. Invalidate cache
-    4. Return command result
-    """
     handlers = get_command_handlers(http_request)
     command = CreateUserCommand(name=request.name, email=request.email)
     return handlers["create_user"].handle(command)
@@ -64,15 +55,6 @@ def update_user_command(
     request: UpdateUserRequestDTO,
     http_request: Request
 ) -> CommandResponseDTO:
-    """
-    Update an existing user via command.
-    
-    **Command Flow:**
-    1. Update user in PostgreSQL
-    2. Publish UserUpdatedEvent to RabbitMQ
-    3. Invalidate cache
-    4. Return command result
-    """
     handlers = get_command_handlers(http_request)
     command = UpdateUserCommand(
         user_id=user_id,
@@ -92,15 +74,6 @@ def delete_user_command(
     user_id: int,
     http_request: Request
 ) -> CommandResponseDTO:
-    """
-    Delete a user via command.
-    
-    **Command Flow:**
-    1. Delete user from PostgreSQL
-    2. Publish UserDeletedEvent to RabbitMQ
-    3. Invalidate cache
-    4. Return command result
-    """
     handlers = get_command_handlers(http_request)
     command = DeleteUserCommand(user_id=user_id)
     return handlers["delete_user"].handle(command)

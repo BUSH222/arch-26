@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException, Request
-import redis
-import psycopg2
+from fastapi import FastAPI, HTTPException, Request  # noqa: F401 #type:ignore
+import redis  # noqa: F401 #type:ignore
+import psycopg2  # noqa: F401 #type:ignore
 import time
 from rabbitmq_client import setup_rabbitmq
-from prometheus_client import make_asgi_app, Counter, Histogram
+from prometheus_client import make_asgi_app, Counter, Histogram  # noqa: F401 #type:ignore
 
 # Import CQRS routers
 from routers import command_routes, query_routes
@@ -22,8 +22,8 @@ time.sleep(2)
 setup_rabbitmq()
 
 app = FastAPI(
-    title="Cache-Aside Demo API with CQRS + Event Sourcing",
-    description="Demonstrates CQRS pattern with Event Sourcing - separate command and query sides with event store"
+    title="Arch project",
+    description="gauuau"
 )
 
 # Prometheus Metrics
@@ -41,6 +41,7 @@ http_request_duration_seconds = Histogram(
 
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
+
 
 @app.middleware("http")
 async def prometheus_middleware(request: Request, call_next):
@@ -69,7 +70,7 @@ def init_event_store_schema():
     try:
         with open('init_event_store.sql', 'r') as f:
             schema_sql = f.read()
-        
+
         with db.cursor() as cur:
             cur.execute(schema_sql)
             db.commit()
@@ -80,18 +81,18 @@ def init_event_store_schema():
         print(f"⚠ Error initializing event store schema: {e}")
 
 
-# ============== Initialize Event Store ==============
+# Initialize Event Store
 
 init_event_store_schema()
 
 
-# ============== CQRS Handler Initialization ==============
+# CQRS Handler init
 
 def init_command_handlers():
     """Initialize all command handlers with event sourcing"""
     write_repo = WriteUserRepository(db)
     event_store_repo = EventStoreRepository(db)
-    
+
     return {
         "create_user": CreateUserCommandHandler(write_repo, event_store_repo),
         "update_user": UpdateUserCommandHandler(write_repo, event_store_repo),
@@ -102,7 +103,7 @@ def init_command_handlers():
 def init_query_handlers():
     """Initialize all query handlers"""
     read_repo = ReadUserRepository(redis_client, db)
-    
+
     return {
         "get_user": GetUserQueryHandler(read_repo),
         "get_all_users": GetAllUsersQueryHandler(read_repo),
@@ -157,7 +158,7 @@ def get_all_events():
     try:
         event_store = EventStoreRepository(db)
         events = event_store.get_all_events()
-        
+
         return {
             "total_events": len(events),
             "events": [
@@ -184,14 +185,14 @@ def get_aggregate_events(aggregate_id: int):
     try:
         event_store = EventStoreRepository(db)
         events = event_store.get_aggregate_events(aggregate_id)
-        
+
         if not events:
             return {
                 "aggregate_id": aggregate_id,
                 "total_events": 0,
                 "events": []
             }
-        
+
         return {
             "aggregate_id": aggregate_id,
             "total_events": len(events),
@@ -228,7 +229,7 @@ def get_events_by_type(event_type: str):
                 (event_type,)
             )
             rows = cur.fetchall()
-        
+
         events = []
         for row in rows:
             import json
@@ -242,7 +243,7 @@ def get_events_by_type(event_type: str):
                 "created_at": row[6].isoformat() if row[6] else "",
                 "version": row[7]
             })
-        
+
         return {
             "event_type": event_type,
             "total_events": len(events),
@@ -260,23 +261,23 @@ def get_event_store_stats():
             # Total events
             cur.execute("SELECT COUNT(*) FROM event_store")
             total_events = cur.fetchone()[0]
-            
+
             # Events by type
             cur.execute(
                 "SELECT event_type, COUNT(*) as count FROM event_store GROUP BY event_type"
             )
             events_by_type = {row[0]: row[1] for row in cur.fetchall()}
-            
+
             # Total aggregates
             cur.execute("SELECT COUNT(DISTINCT aggregate_id) FROM event_store WHERE aggregate_id IS NOT NULL")
             total_aggregates = cur.fetchone()[0]
-            
+
             # Latest event
             cur.execute(
                 "SELECT event_id, event_type, created_at FROM event_store ORDER BY event_id DESC LIMIT 1"
             )
             latest = cur.fetchone()
-        
+
         return {
             "total_events": total_events,
             "total_aggregates": total_aggregates,
@@ -289,4 +290,3 @@ def get_event_store_stats():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-

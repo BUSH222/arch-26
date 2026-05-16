@@ -1,21 +1,12 @@
 import json
 from typing import Optional, Dict, Any, List
-import redis
-import psycopg2
+import redis  # noqa: F401 #type:ignore
+import psycopg2  # noqa: F401 #type:ignore
 
 
 class ReadUserRepository:
-    """
-    Repository for read operations on users.
-    
-    Reads from projections (built from events), not directly from write model.
-    - Primary: user_projections table (built from events)
-    - Cache: Redis (for high-frequency reads)
-    - Fallback: PostgreSQL users table (for backwards compatibility during transition)
-    """
-    
     CACHE_TTL = 60
-    
+
     def __init__(
         self,
         redis_client: redis.Redis,
@@ -23,111 +14,91 @@ class ReadUserRepository:
     ):
         self.redis = redis_client
         self.db = db_connection
-    
+
     @staticmethod
     def cache_key(user_id: int) -> str:
         return f"user:{user_id}"
-    
+
     @staticmethod
     def all_users_cache_key() -> str:
         return "users:all"
-    
+
     def get_user(self, user_id: int) -> tuple[Optional[Dict[str, Any]], str]:
-        """
-        Retrieve a user by ID using cache-aside pattern.
-        
-        Flow:
-        1. Try Redis cache
-        2. Try user_projections (built from events)
-        3. Fall back to users table for backwards compatibility
-        
-        Returns: (user_data, cache_state) where cache_state is "hit" or "miss"
-        """
         key = self.cache_key(user_id)
-        
+
         # Try cache first
         cached = self.redis.get(key)
         if cached:
             return (json.loads(cached), "hit")
-        
+
         # Cache miss - try projections first
         user = self._get_user_from_projection(user_id)
-        
+
         # Fallback to users table if projection doesn't have it yet
         if not user:
             user = self._get_user_from_write_model(user_id)
-        
+
         if not user:
             return (None, "miss")
-        
+
         # Populate cache
         self.redis.setex(key, self.CACHE_TTL, json.dumps(user))
-        
+
         return (user, "miss")
-    
+
     def get_all_users(self) -> tuple[List[Dict[str, Any]], str]:
-        """
-        Retrieve all users using cache-aside pattern.
-        
-        Flow:
-        1. Try Redis cache
-        2. Try users_list_projection
-        3. Fall back to users table
-        
-        Returns: (users_list, cache_state) where cache_state is "hit" or "miss"
-        """
         key = self.all_users_cache_key()
-        
+
         # Try cache first
         cached = self.redis.get(key)
         if cached:
             return (json.loads(cached), "hit")
-        
+
         # Cache miss - try projection first
         users = self._get_all_users_from_projection()
-        
+
         # Fallback to users table if projection doesn't have data
         if not users:
             users = self._get_all_users_from_write_model()
-        
+
         # Populate cache
         self.redis.setex(key, self.CACHE_TTL, json.dumps(users))
-        
+
         return (users, "miss")
-    
+
     def _get_user_from_projection(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user from user_projections table (read model built from events)"""
         with self.db.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, name, email FROM user_projections 
+                SELECT id, name, email FROM user_projections
                 WHERE id = %s AND deleted_at IS NULL
                 """,
                 (user_id,)
             )
             row = cur.fetchone()
-        
+
         if not row:
             return None
-        
+
         return {
             "id": row[0],
             "name": row[1],
             "email": row[2]
         }
-    
+
     def _get_all_users_from_projection(self) -> List[Dict[str, Any]]:
         """Get all users from users_list_projection table (read model)"""
         with self.db.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, name, email FROM users_list_projection 
+                SELECT id, name, email FROM users_list_projection
                 WHERE is_active = TRUE
                 ORDER BY id
                 """
             )
             rows = cur.fetchall()
-        
+
         return [
             {
                 "id": r[0],
@@ -136,7 +107,7 @@ class ReadUserRepository:
             }
             for r in rows
         ]
-    
+
     def _get_user_from_write_model(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Fallback: Get user directly from users table (write model)"""
         with self.db.cursor() as cur:
@@ -145,22 +116,22 @@ class ReadUserRepository:
                 (user_id,)
             )
             row = cur.fetchone()
-        
+
         if not row:
             return None
-        
+
         return {
             "id": row[0],
             "name": row[1],
             "email": row[2]
         }
-    
+
     def _get_all_users_from_write_model(self) -> List[Dict[str, Any]]:
         """Fallback: Get all users directly from users table"""
         with self.db.cursor() as cur:
             cur.execute("SELECT id, name, email FROM users ORDER BY id")
             rows = cur.fetchall()
-        
+
         return [
             {
                 "id": r[0],

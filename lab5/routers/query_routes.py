@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Request
-import redis
-import psycopg2
+from fastapi import APIRouter, Request  # noqa: F401 #type:ignore
+import redis  # noqa: F401 #type:ignore
+import psycopg2  # noqa: F401 #type:ignore
 
 from cqrs.dtos import GetUserResponseDTO, GetAllUsersResponseDTO
 from cqrs.queries.models import GetUserQuery, GetAllUsersQuery
-from cqrs.queries.handlers import GetUserQueryHandler, GetAllUsersQueryHandler
-from cqrs.queries.repository import ReadUserRepository
+# from cqrs.queries.handlers import GetUserQueryHandler, GetAllUsersQueryHandler
+# from cqrs.queries.repository import ReadUserRepository
 
 
 router = APIRouter(prefix="/queries", tags=["Queries"])
@@ -26,14 +26,6 @@ def get_user_query(
     user_id: int,
     http_request: Request
 ) -> GetUserResponseDTO:
-    """
-    Get a user by ID via query.
-    
-    **Query Flow:**
-    1. Try to fetch from Redis cache
-    2. Fall back to PostgreSQL
-    3. Return with cache state ("hit" or "miss")
-    """
     handlers = get_query_handlers(http_request)
     query = GetUserQuery(user_id=user_id)
     return handlers["get_user"].handle(query)
@@ -48,14 +40,6 @@ def get_user_query(
 def get_all_users_query(
     http_request: Request
 ) -> GetAllUsersResponseDTO:
-    """
-    Get all users via query.
-    
-    **Query Flow:**
-    1. Try to fetch all users from Redis cache
-    2. Fall back to PostgreSQL
-    3. Return with cache state ("hit" or "miss")
-    """
     handlers = get_query_handlers(http_request)
     query = GetAllUsersQuery()
     return handlers["get_all_users"].handle(query)

@@ -1,4 +1,4 @@
-import psycopg2
+import psycopg2  # noqa: F401 #type:ignore
 from cqrs.events import StoredEvent
 from cqrs.event_handlers.base import EventHandler
 
@@ -9,10 +9,10 @@ class UserProjectionEventHandler(EventHandler):
     based on domain events. This projection is the single source of truth
     for read operations.
     """
-    
+
     def __init__(self, db_connection: psycopg2.extensions.connection):
         self.db = db_connection
-    
+
     def can_handle(self, event: StoredEvent) -> bool:
         """This handler processes all user-related events"""
         return event["event_type"] in [
@@ -20,23 +20,23 @@ class UserProjectionEventHandler(EventHandler):
             "UserUpdatedEvent",
             "UserDeletedEvent"
         ]
-    
+
     def handle(self, event: StoredEvent) -> None:
         """Update the user_projections table based on the event"""
         event_type = event["event_type"]
-        
+
         if event_type == "UserCreatedEvent":
             self._handle_user_created(event)
         elif event_type == "UserUpdatedEvent":
             self._handle_user_updated(event)
         elif event_type == "UserDeletedEvent":
             self._handle_user_deleted(event)
-    
+
     def _handle_user_created(self, event: StoredEvent) -> None:
         """Handle UserCreatedEvent: Insert into user_projections"""
         event_data = event["event_data"]
         aggregate_id = event["aggregate_id"]
-        
+
         with self.db.cursor() as cur:
             cur.execute(
                 """
@@ -57,12 +57,12 @@ class UserProjectionEventHandler(EventHandler):
                 )
             )
             self.db.commit()
-    
+
     def _handle_user_updated(self, event: StoredEvent) -> None:
         """Handle UserUpdatedEvent: Update user_projections"""
         event_data = event["event_data"]
         aggregate_id = event["aggregate_id"]
-        
+
         # Get current user data
         with self.db.cursor() as cur:
             cur.execute(
@@ -70,16 +70,16 @@ class UserProjectionEventHandler(EventHandler):
                 (aggregate_id,)
             )
             row = cur.fetchone()
-        
+
         if not row:
-            return  # User doesn't exist in projection yet
-        
+            return
+
         current_name, current_email = row
-        
+
         # Apply partial updates (only update non-None fields)
         new_name = event_data.get("name") or current_name
         new_email = event_data.get("email") or current_email
-        
+
         with self.db.cursor() as cur:
             cur.execute(
                 """
@@ -96,12 +96,12 @@ class UserProjectionEventHandler(EventHandler):
                 )
             )
             self.db.commit()
-    
+
     def _handle_user_deleted(self, event: StoredEvent) -> None:
         """Handle UserDeletedEvent: Mark as deleted in user_projections"""
         event_data = event["event_data"]
         aggregate_id = event["aggregate_id"]
-        
+
         with self.db.cursor() as cur:
             cur.execute(
                 """
