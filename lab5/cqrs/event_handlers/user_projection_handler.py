@@ -56,7 +56,7 @@ class UserProjectionEventHandler(EventHandler):
                     event["version"]
                 )
             )
-            # Also insert into the second read model (list projection)
+
             cur.execute(
                 """
                 INSERT INTO users_list_projection (id, name, email, created_at, is_active)
