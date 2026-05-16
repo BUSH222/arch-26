@@ -1,9 +1,9 @@
 import json
+import uuid
 from datetime import datetime
 import redis  # noqa: F401 # type: ignore
 
 from cqrs.commands.models import CreateUserCommand, UpdateUserCommand, DeleteUserCommand
-from cqrs.commands.repository import WriteUserRepository
 from cqrs.events import UserCreatedEvent, UserUpdatedEvent, UserDeletedEvent, StoredEvent
 from cqrs.event_store.repository import EventStoreRepository
 from cqrs.dtos import CreateUserCommandResponseDTO, CommandResponseDTO
@@ -33,18 +33,15 @@ class EventPublisher:
 class CreateUserCommandHandler:
     def __init__(
         self,
-        repository: WriteUserRepository,
         event_store_repo: EventStoreRepository
     ):
-        self.repository = repository
         self.event_store = event_store_repo
         self.event_publisher = EventPublisher()
 
     def handle(self, command: CreateUserCommand) -> CreateUserCommandResponseDTO:
         """Execute the CreateUserCommand"""
         try:
-            created_user = self.repository.create_user(command.name, command.email)
-            user_id = created_user["id"]
+            user_id = str(uuid.uuid4())
 
             event_data: UserCreatedEvent = {
                 "aggregate_id": user_id,
@@ -79,22 +76,16 @@ class CreateUserCommandHandler:
 class UpdateUserCommandHandler:
     def __init__(
         self,
-        repository: WriteUserRepository,
         event_store_repo: EventStoreRepository
     ):
-        self.repository = repository
         self.event_store = event_store_repo
         self.event_publisher = EventPublisher()
 
     def handle(self, command: UpdateUserCommand) -> CommandResponseDTO:
         try:
-            updated_user = self.repository.update_user(
-                command.user_id,
-                command.name,
-                command.email
-            )
-
-            if not updated_user:
+            # Check if user exists via Event Store
+            past_events = self.event_store.get_aggregate_events(command.user_id)
+            if not past_events or past_events[-1]["event_type"] == "UserDeletedEvent":
                 return CommandResponseDTO(
                     command_id=command.command_id,
                     status="failed",
@@ -133,18 +124,16 @@ class UpdateUserCommandHandler:
 class DeleteUserCommandHandler:
     def __init__(
         self,
-        repository: WriteUserRepository,
         event_store_repo: EventStoreRepository
     ):
-        self.repository = repository
         self.event_store = event_store_repo
         self.event_publisher = EventPublisher()
 
     def handle(self, command: DeleteUserCommand) -> CommandResponseDTO:
         try:
-            success = self.repository.delete_user(command.user_id)
-
-            if not success:
+            # Check if user exists via Event Store
+            past_events = self.event_store.get_aggregate_events(command.user_id)
+            if not past_events or past_events[-1]["event_type"] == "UserDeletedEvent":
                 return CommandResponseDTO(
                     command_id=command.command_id,
                     status="failed",

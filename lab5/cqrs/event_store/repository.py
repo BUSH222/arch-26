@@ -13,7 +13,7 @@ class EventStoreRepository:
     def append_event(
         self,
         event_type: str,
-        aggregate_id: Optional[int],
+        aggregate_id: Optional[str],
         event_data: Dict[str, Any],
         command_id: str
     ) -> StoredEvent:
@@ -67,7 +67,7 @@ class EventStoreRepository:
         }
         return stored_event
 
-    def get_aggregate_events(self, aggregate_id: int) -> List[StoredEvent]:
+    def get_aggregate_events(self, aggregate_id: str) -> List[StoredEvent]:
         """Retrieve all events for an aggregate, ordered by version"""
         with self.db.cursor() as cur:
             cur.execute(

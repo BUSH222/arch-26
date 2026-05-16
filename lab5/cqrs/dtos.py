@@ -27,13 +27,13 @@ class CommandResponseDTO(BaseModel):
 
 
 class CreateUserCommandResponseDTO(CommandResponseDTO):
-    user_id: Optional[int] = None
+    user_id: Optional[str] = None
 
 
 # ============== QUERY REQUEST DTOs ==============
 
 class GetUserQueryDTO(BaseModel):
-    user_id: int
+    user_id: str
 
 
 class GetAllUsersQueryDTO(BaseModel):
@@ -43,7 +43,7 @@ class GetAllUsersQueryDTO(BaseModel):
 # ============== QUERY RESPONSE DTOs ==============
 
 class UserDTO(BaseModel):
-    id: int
+    id: str
     name: str
     email: str
 

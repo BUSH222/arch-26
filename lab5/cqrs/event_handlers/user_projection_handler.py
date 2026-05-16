@@ -56,29 +56,32 @@ class UserProjectionEventHandler(EventHandler):
                     event["version"]
                 )
             )
-            self.db.commit()
+            # Also insert into the second read model (list projection)
+            cur.execute(
+                """
+                INSERT INTO users_list_projection (id, name, email, created_at, is_active)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    email = EXCLUDED.email,
+                    created_at = EXCLUDED.created_at,
+                    is_active = EXCLUDED.is_active
+                """,
+                (
+                    aggregate_id,
+                    event_data["name"],
+                    event_data["email"],
+                    event_data["created_at"],
+                    True
+                )
+            )
+        self.db.commit()
+        print(f"[UserProjection] Created user {aggregate_id}")
 
     def _handle_user_updated(self, event: StoredEvent) -> None:
         """Handle UserUpdatedEvent: Update user_projections"""
         event_data = event["event_data"]
         aggregate_id = event["aggregate_id"]
-
-        # Get current user data
-        with self.db.cursor() as cur:
-            cur.execute(
-                "SELECT name, email FROM user_projections WHERE id = %s",
-                (aggregate_id,)
-            )
-            row = cur.fetchone()
-
-        if not row:
-            return
-
-        current_name, current_email = row
-
-        # Apply partial updates (only update non-None fields)
-        new_name = event_data.get("name") or current_name
-        new_email = event_data.get("email") or current_email
 
         with self.db.cursor() as cur:
             cur.execute(
@@ -88,17 +91,30 @@ class UserProjectionEventHandler(EventHandler):
                 WHERE id = %s
                 """,
                 (
-                    new_name,
-                    new_email,
+                    event_data["name"],
+                    event_data["email"],
                     event_data["updated_at"],
                     event["version"],
                     aggregate_id
                 )
             )
-            self.db.commit()
+            cur.execute(
+                """
+                UPDATE users_list_projection
+                SET name = %s, email = %s
+                WHERE id = %s
+                """,
+                (
+                    event_data["name"],
+                    event_data["email"],
+                    aggregate_id
+                )
+            )
+        self.db.commit()
+        print(f"[UserProjection] Updated user {aggregate_id}")
 
     def _handle_user_deleted(self, event: StoredEvent) -> None:
-        """Handle UserDeletedEvent: Mark as deleted in user_projections"""
+        """Handle UserDeletedEvent: Mark as deleted in projectors"""
         event_data = event["event_data"]
         aggregate_id = event["aggregate_id"]
 
@@ -115,4 +131,16 @@ class UserProjectionEventHandler(EventHandler):
                     aggregate_id
                 )
             )
-            self.db.commit()
+            cur.execute(
+                """
+                UPDATE users_list_projection
+                SET is_active = %s
+                WHERE id = %s
+                """,
+                (
+                    False,
+                    aggregate_id
+                )
+            )
+        self.db.commit()
+        print(f"[UserProjection] Deleted user {aggregate_id}")

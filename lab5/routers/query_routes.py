@@ -23,7 +23,7 @@ def get_query_handlers(request: Request):
     description="Query to retrieve a single user. Uses cache-aside pattern."
 )
 def get_user_query(
-    user_id: int,
+    user_id: str,
     http_request: Request
 ) -> GetUserResponseDTO:
     handlers = get_query_handlers(http_request)

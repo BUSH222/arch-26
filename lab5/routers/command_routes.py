@@ -51,7 +51,7 @@ def create_user_command(
     description="Command to update an existing user. Publishes UserUpdatedEvent."
 )
 def update_user_command(
-    user_id: int,
+    user_id: str,
     request: UpdateUserRequestDTO,
     http_request: Request
 ) -> CommandResponseDTO:
@@ -71,7 +71,7 @@ def update_user_command(
     description="Command to delete a user. Publishes UserDeletedEvent."
 )
 def delete_user_command(
-    user_id: int,
+    user_id: str,
     http_request: Request
 ) -> CommandResponseDTO:
     handlers = get_command_handlers(http_request)

@@ -1,11 +1,9 @@
 from typing import TypedDict, Optional
 
 
-# ============== DOMAIN EVENTS (business events) ==============
-
 class UserCreatedEvent(TypedDict):
     """Domain event: User was created"""
-    aggregate_id: Optional[int]  # None initially, assigned after store
+    aggregate_id: Optional[str]
     name: str
     email: str
     created_at: str
@@ -13,7 +11,7 @@ class UserCreatedEvent(TypedDict):
 
 class UserUpdatedEvent(TypedDict):
     """Domain event: User was updated"""
-    aggregate_id: int
+    aggregate_id: str
     name: Optional[str]
     email: Optional[str]
     updated_at: str
@@ -21,11 +19,9 @@ class UserUpdatedEvent(TypedDict):
 
 class UserDeletedEvent(TypedDict):
     """Domain event: User was deleted"""
-    aggregate_id: int
+    aggregate_id: str
     deleted_at: str
 
-
-# ============== STORED EVENTS (what persists in event store) ==============
 
 class StoredEventMetadata(TypedDict):
     """Metadata about a stored event"""
@@ -38,7 +34,7 @@ class StoredEvent(TypedDict):
     """Event as persisted in event store"""
     event_id: int
     event_type: str                    # "UserCreatedEvent", etc.
-    aggregate_id: int
+    aggregate_id: str
     aggregate_type: str                # "User"
     event_data: dict                   # The domain event payload
     metadata: StoredEventMetadata

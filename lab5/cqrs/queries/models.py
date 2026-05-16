@@ -6,7 +6,7 @@ from datetime import datetime
 @dataclass
 class GetUserQuery:
     """Query to retrieve a single user by ID"""
-    user_id: int
+    user_id: str
     query_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=datetime.utcnow)
 

@@ -16,14 +16,14 @@ class ReadUserRepository:
         self.db = db_connection
 
     @staticmethod
-    def cache_key(user_id: int) -> str:
+    def cache_key(user_id: str) -> str:
         return f"user:{user_id}"
 
     @staticmethod
     def all_users_cache_key() -> str:
         return "users:all"
 
-    def get_user(self, user_id: int) -> tuple[Optional[Dict[str, Any]], str]:
+    def get_user(self, user_id: str) -> tuple[Optional[Dict[str, Any]], str]:
         key = self.cache_key(user_id)
 
         # Try cache first
@@ -31,12 +31,8 @@ class ReadUserRepository:
         if cached:
             return (json.loads(cached), "hit")
 
-        # Cache miss - try projections first
+        # Cache miss - try projections
         user = self._get_user_from_projection(user_id)
-
-        # Fallback to users table if projection doesn't have it yet
-        if not user:
-            user = self._get_user_from_write_model(user_id)
 
         if not user:
             return (None, "miss")
@@ -54,19 +50,15 @@ class ReadUserRepository:
         if cached:
             return (json.loads(cached), "hit")
 
-        # Cache miss - try projection first
+        # Cache miss - try projection
         users = self._get_all_users_from_projection()
-
-        # Fallback to users table if projection doesn't have data
-        if not users:
-            users = self._get_all_users_from_write_model()
 
         # Populate cache
         self.redis.setex(key, self.CACHE_TTL, json.dumps(users))
 
         return (users, "miss")
 
-    def _get_user_from_projection(self, user_id: int) -> Optional[Dict[str, Any]]:
+    def _get_user_from_projection(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user from user_projections table (read model built from events)"""
         with self.db.cursor() as cur:
             cur.execute(
@@ -97,39 +89,6 @@ class ReadUserRepository:
                 ORDER BY id
                 """
             )
-            rows = cur.fetchall()
-
-        return [
-            {
-                "id": r[0],
-                "name": r[1],
-                "email": r[2]
-            }
-            for r in rows
-        ]
-
-    def _get_user_from_write_model(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Fallback: Get user directly from users table (write model)"""
-        with self.db.cursor() as cur:
-            cur.execute(
-                "SELECT id, name, email FROM users WHERE id=%s",
-                (user_id,)
-            )
-            row = cur.fetchone()
-
-        if not row:
-            return None
-
-        return {
-            "id": row[0],
-            "name": row[1],
-            "email": row[2]
-        }
-
-    def _get_all_users_from_write_model(self) -> List[Dict[str, Any]]:
-        """Fallback: Get all users directly from users table"""
-        with self.db.cursor() as cur:
-            cur.execute("SELECT id, name, email FROM users ORDER BY id")
             rows = cur.fetchall()
 
         return [

@@ -12,7 +12,6 @@ from cqrs.commands.handlers import (
     UpdateUserCommandHandler,
     DeleteUserCommandHandler
 )
-from cqrs.commands.repository import WriteUserRepository
 from cqrs.queries.handlers import GetUserQueryHandler, GetAllUsersQueryHandler
 from cqrs.queries.repository import ReadUserRepository
 from cqrs.event_store.repository import EventStoreRepository
@@ -90,13 +89,12 @@ init_event_store_schema()
 
 def init_command_handlers():
     """Initialize all command handlers with event sourcing"""
-    write_repo = WriteUserRepository(db)
     event_store_repo = EventStoreRepository(db)
 
     return {
-        "create_user": CreateUserCommandHandler(write_repo, event_store_repo),
-        "update_user": UpdateUserCommandHandler(write_repo, event_store_repo),
-        "delete_user": DeleteUserCommandHandler(write_repo, event_store_repo),
+        "create_user": CreateUserCommandHandler(event_store_repo),
+        "update_user": UpdateUserCommandHandler(event_store_repo),
+        "delete_user": DeleteUserCommandHandler(event_store_repo),
     }
 
 

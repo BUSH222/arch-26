@@ -13,7 +13,7 @@ class CacheInvalidationEventHandler(EventHandler):
         self.redis = redis_client
 
     @staticmethod
-    def cache_key(user_id: int) -> str:
+    def cache_key(user_id: str) -> str:
         return f"user:{user_id}"
 
     @staticmethod

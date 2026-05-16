@@ -16,7 +16,7 @@ class CreateUserCommand:
 @dataclass
 class UpdateUserCommand:
     """Command to update an existing user"""
-    user_id: int
+    user_id: str
     name: Optional[str] = None
     email: Optional[str] = None
     command_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -26,6 +26,6 @@ class UpdateUserCommand:
 @dataclass
 class DeleteUserCommand:
     """Command to delete a user"""
-    user_id: int
+    user_id: str
     command_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=datetime.utcnow)
